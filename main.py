@@ -88,4 +88,4 @@ if __name__ == '__main__':
             output = output.permute(0, 2, 3, 1)
             box_prediction = output[:, :, :, :4]
             class_prediction = output[:, :, :, 4:]
-            loss = criterion(class_prediction[0], box_prediction[0], batch_classes[0], batch_boxes[0], anchor_boxes)
+            loss = criterion(batch_images[0], class_prediction[0], box_prediction[0], batch_classes[0], batch_boxes[0], anchor_boxes)
