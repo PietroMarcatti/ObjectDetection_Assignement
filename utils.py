@@ -9,6 +9,16 @@ import utils
 image_size: int = 236
 grid_size: int = 3
 threshold: float = 0.4
+number_of_classes = 14
+class_criterion = torch.nn.BCEWithLogitsLoss()
+device = torch.device("cpu")
+if torch.cuda.is_available():
+    device = torch.device("cuda")
+cell_size = 1 / grid_size
+anchor_boxes = torch.tensor(
+            [[[cell_size * (j + 0.5), cell_size * (i + 0.5), cell_size, cell_size] for j in range(grid_size)] for i in range(grid_size)],
+            dtype=torch.float32)
+anchor_boxes = anchor_boxes.to(device)
 
 # Every input parameter is expected to be either a list or a tensor with batch_size elements in the first dimension
 # This functions plots the images, the ground truth boxes and class ids as well as the predicted boxes and classes
@@ -144,7 +154,7 @@ def boxes_list_to_corners(target_boxes):
 # target box. The function expects both box groups to be expressed as x,y,w,h
 def iou_coefficients(predicted_boxes, target_boxes):
     predicted_boxes = bb_hw_to_corners(predicted_boxes)
-    target_boxes = boxes_list_to_corners(target_boxes)
+    target_boxes = boxes_list_to_corners(target_boxes).to(device)
     iou = ops.box_iou(target_boxes, predicted_boxes)
     return iou
 
@@ -168,14 +178,35 @@ def map_to_ground_truth(iou):
     return gt_overlap, gt_index
 
 
-def ssd_item_loss(image, pred_classes, pred_boxes, target_classes, target_boxes, anchor_boxes):
-    corner_target_boxes = np.divide(target_boxes, image_size)
-    activated_boxes = bb_activation_to_prediction(pred_boxes, anchor_boxes, grid_size).flatten(start_dim = 0, end_dim = 1)
+def ssd_item_loss(pred_classes, pred_boxes, target_classes, target_boxes):
+    corner_target_boxes = np.divide(target_boxes.cpu(), image_size)
+    activated_boxes = bb_activation_to_prediction(pred_boxes, anchor_boxes, grid_size).flatten(start_dim=0, end_dim=1)
     iou_coeff = iou_coefficients(activated_boxes, target_boxes)
     anchor_gt_overlap, anchor_gt_index = map_to_ground_truth(iou_coeff)
     # (gt_object_number, grid_size*grid_size) boolean matrix
     positive_overlap_mask = anchor_gt_overlap > threshold
-    positive_index_mask = anchor_gt_index[positive_overlap_mask]
-    positive_boxes = activated_boxes[positive_overlap_mask]
-    ciao = 2
+    positive_index_mask = torch.nonzero(positive_overlap_mask)[:, 0]
+    positive_boxes = activated_boxes[positive_index_mask]
+    gt_boxes = corner_target_boxes[anchor_gt_index.cpu()]
+    box_loss = (positive_boxes - gt_boxes[positive_index_mask.cpu()].cuda()).abs().mean()
 
+    target_class_ids = torch.argmax(target_classes, dim=1)
+    gt_class = target_class_ids[anchor_gt_index.cpu()]
+    gt_class[~positive_overlap_mask.cpu()] = number_of_classes
+    gt_class = torch.eye(number_of_classes+1)[gt_class.cpu()]
+    gt_class = gt_class[:, :-1].cuda()
+    pred_classes = pred_classes.flatten(start_dim=0, end_dim=1)[:, :-1]
+    class_loss = class_criterion(pred_classes, gt_class)
+    return box_loss, class_loss
+
+
+def ssd_loss(batch_pred_classes, batch_pred_boxes, batch_target_classes, batch_target_boxes):
+    localization_loss = 0.
+    classification_loss = 0.
+    for pred_classes, pred_boxes, target_classes, target_boxes in zip(batch_pred_classes, batch_pred_boxes, batch_target_classes, batch_target_boxes):
+        target_boxes = target_boxes.to(device)
+        target_classes = target_classes.to(device)
+        loc_loss, class_loss = ssd_item_loss(pred_classes, pred_boxes, target_classes, target_boxes)
+        localization_loss += loc_loss
+        classification_loss += class_loss
+    return localization_loss + classification_loss

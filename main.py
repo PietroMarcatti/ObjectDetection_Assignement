@@ -59,14 +59,10 @@ if __name__ == '__main__':
 
     # Anchor boxes are the base guesses of our model, they are going to a grid_size x grid_size of equal sized squares
     # Each anchor box is defined by its centroid (x, y), width and height, hence the tensor (grid_size, grid_size, 4)
-    cell_size = 1 / grid_size
-    anchor_boxes = torch.tensor(
-            [[[cell_size * (j + 0.5), cell_size * (i + 0.5), cell_size, cell_size] for j in range(grid_size)] for i in range(grid_size)],
-            dtype=torch.float32)
+
 
     net = Net(number_of_classes).to(device)
 
-    expanded_anchor_boxes = anchor_boxes.repeat(batch_size, 1, 1, 1)
     data_iterator = iter(train_loader)
     images_batch, boxes_label_batch, classes_label_batch = next(data_iterator)
     classes_placeholder = torch.zeros((batch_size, grid_size, grid_size, 1))
@@ -74,10 +70,10 @@ if __name__ == '__main__':
     # utils.print_batch_check(image_size, images_batch, boxes_label_batch, classes_label_batch,
     #                         expanded_anchor_boxes, classes_placeholder)
     optimizer = optim.Adam(net.parameters(), lr=0.001, weight_decay=0.01)
-    criterion = utils.ssd_item_loss
-    anchor_boxes = anchor_boxes.to(device)
+    criterion = utils.ssd_loss
+    loss_history = []
 
-    for epoch in range(3):
+    for epoch in range(35):
         running_loss = 0.0
         for batch_number, batch in enumerate(train_loader):
             batch_images, batch_boxes, batch_classes = batch
@@ -88,4 +84,12 @@ if __name__ == '__main__':
             output = output.permute(0, 2, 3, 1)
             box_prediction = output[:, :, :, :4]
             class_prediction = output[:, :, :, 4:]
-            loss = criterion(batch_images[0], class_prediction[0], box_prediction[0], batch_classes[0], batch_boxes[0], anchor_boxes)
+            loss = criterion(class_prediction, box_prediction, batch_classes, batch_boxes)
+            loss.backward()
+            optimizer.step()
+            loss_history.append(loss.item())
+            running_loss += loss.item()
+            if batch_number % 250 == 249:  # Printing the runnin loss every 500 mini-batches
+                print(f"[epoch: {epoch + 1}, mini-batch: {batch_number + 1}] loss: {(running_loss / 250):.3f}")
+                running_loss = 0.0
+    print('Finished Training!')

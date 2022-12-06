@@ -47,7 +47,7 @@ class ObjectDetectionDataSet(Dataset):
         # 0-3 for the bounding box coordinates (x,y,w,h)
         # 4-numberOfClasses+1 for the one-hot vector used in the classification task
         label_boxes = torch.zeros((label_number, 4))
-        label_classes = torch.zeros((label_number, self.numberOfClasses + 1))
+        label_classes = torch.zeros((label_number, self.numberOfClasses))
         # Iterate through the items to populate the label tensor
         for i in range(1, label_number + 1):
             # Get the bounding boxes coordinates from the annotation file
@@ -57,7 +57,7 @@ class ObjectDetectionDataSet(Dataset):
             # Calculate the height and width of the bounding box
             bbox_w, bbox_h = ((abs(x_max - x_min)), (abs(y_max - y_min)))
             # Create a one-hot vector which is active for the class of the target
-            label_classes[i - 1] = torch.nn.functional.one_hot(torch.tensor([jsonf['item' + str(i)]['category_id']]), self.numberOfClasses + 1)[0]
+            label_classes[i - 1] = torch.nn.functional.one_hot(torch.tensor([jsonf['item' + str(i)]['category_id']]), self.numberOfClasses)[0]
             # Put together the label vector
             label_boxes[i - 1] = torch.div(torch.tensor([centroid_x, centroid_y, bbox_w, bbox_h]), self.imageSize)
 
