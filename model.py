@@ -42,7 +42,8 @@ class Net(nn.Module):
             # 10 x 10 x 128
             nn.MaxPool2d(kernel_size=2, stride=2),
             # 5 x 5 x 128
-            OutputLayer(128, number_of_classes)
+            OutputLayer(128, number_of_classes),
+            # 3 x 3 x (4+14+1)
         )
 
     def forward(self, x):
